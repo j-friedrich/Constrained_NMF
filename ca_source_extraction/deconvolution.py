@@ -1,28 +1,20 @@
 # -*- coding: utf-8 -*-
 """Extract neural activity from a fluorescence trace using a constrained deconvolution approach
 Created on Tue Sep  1 16:11:25 2015
-@author: Eftychios A. Pnevmatikakis, based on an implementation by T. Machado,  Andrea Giovannucci & Ben Deverett
+@author: Eftychios A. Pnevmatikakis, based on an implementation by T. Machado, Andrea Giovannucci & Ben Deverett
 """
-
-# -*- coding: utf-8 -*-
-# Written by
 
 import numpy as np
 import scipy.signal
 import scipy.linalg
-
 from warnings import warn
-#import time
-#import sys
 from math import log, sqrt
-
 import sys
-#%%
 
 
-def constrained_foopsi(fluor, bl=None,  c1=None, g=None,  sn=None, p=None, method='cvxpy', bas_nonneg=True,
+def constrained_foopsi(fluor, bl=None, c1=None, g=None,  sn=None, p=None, method='cvxpy', bas_nonneg=True,
                        noise_range=[.25, .5], noise_method='logmexp', lags=5, fudge_factor=1.,
-                       verbosity=False, solvers=None, optimize_g=0, penalty=1, **kwargs):
+                       verbosity=False, solvers=None, interleave=False, optimize_g=0, penalty=1, **kwargs):
     """ Infer the most likely discretized spike train underlying a fluorescence trace
 
     It relies on a noise constrained deconvolution approach
@@ -61,7 +53,8 @@ def constrained_foopsi(fluor, bl=None,  c1=None, g=None,  sn=None, p=None, metho
     verbosity: bool
          display optimization details
     solvers: list string
-            primary and secondary (if problem unfeasible for approx solution) solvers to be used with cvxpy, default is ['ECOS','SCS']
+            primary and secondary (if problem unfeasible for approx solution)
+            solvers to be used with cvxpy, default is ['ECOS','SCS']
     Returns
     -------
     c: np.ndarray float
@@ -80,8 +73,18 @@ def constrained_foopsi(fluor, bl=None,  c1=None, g=None,  sn=None, p=None, metho
         raise Exception("You must specify the value of p")
 
     if g is None or sn is None:
-        g, sn = estimate_parameters(fluor, p=p, sn=sn, g=g, range_ff=noise_range,
-                                    method=noise_method, lags=lags, fudge_factor=fudge_factor)
+        if interleave:
+            _, sn0 = estimate_parameters(fluor[::2], p=p, sn=None, g=g, range_ff=noise_range,
+                                         method=noise_method, lags=lags, fudge_factor=fudge_factor)
+            _, sn1 = estimate_parameters(fluor[1::2], p=p, sn=None, g=g, range_ff=noise_range,
+                                         method=noise_method, lags=lags, fudge_factor=fudge_factor)
+            sn = (sn0, sn1)
+            g = estimate_parameters(fluor, p=p, sn=None, g=None, range_ff=noise_range,
+                                    method=noise_method, lags=lags, fudge_factor=fudge_factor)[0]
+        else:
+            g, sn = estimate_parameters(fluor, p=p, sn=sn, g=g, range_ff=noise_range,
+                                        method=noise_method, lags=lags, fudge_factor=fudge_factor)
+
     if p == 0:
         c1 = 0
         g = np.array(0)
@@ -96,7 +99,7 @@ def constrained_foopsi(fluor, bl=None,  c1=None, g=None,  sn=None, p=None, metho
         elif method == 'cvxpy':
 
             c, bl, c1, g, sn, sp = cvxpy_foopsi(
-                fluor,  g, sn, b=bl, c1=c1, bas_nonneg=bas_nonneg, solvers=solvers)
+                fluor, g, sn, b=bl, c1=c1, bas_nonneg=bas_nonneg, solvers=solvers)
 
         elif method == 'oasis':
             from oasis import constrained_oasisAR1
@@ -330,12 +333,17 @@ def cvxpy_foopsi(fluor,  g, sn, b=None, c1=None, bas_nonneg=True, solvers=None):
     else:
         flag_c1 = False
 
-    thrNoise = sn * np.sqrt(fluor.size)
-
     try:
         objective = cvx.Minimize(cvx.norm(G * c, 1))  # minimize number of spikes
         constraints.append(G * c >= 0)
-        constraints.append(cvx.norm(-c + fluor - b - gd_vec * c1, 2) <= thrNoise)  # constraints
+        if type(sn) is tuple:  # interleaved
+            constraints.append(
+                cvx.sum_squares((-c[::2] + fluor[::2] - b - gd_vec[::2] * c1) / sn[0]) +
+                cvx.sum_squares((-c[1::2] + fluor[1::2] - b - gd_vec[1::2] * c1) / sn[1]) <= T)
+        else:  # noninterleaved, sn is float
+            constraints.append(cvx.norm(-c + fluor - b - gd_vec * c1, 2) <=
+                               sn * np.sqrt(T))  # constraints
+        
         prob = cvx.Problem(objective, constraints)
         result = prob.solve(solver=solvers[0])
 
@@ -347,10 +355,18 @@ def cvxpy_foopsi(fluor,  g, sn, b=None, c1=None, bas_nonneg=True, solvers=None):
     except (ValueError, cvx.SolverError) as err:     # if solvers fail to solve the problem
         #         print(err)
         #         sys.stdout.flush()
-        lam = sn / 500
         constraints = constraints[:-1]
-        objective = cvx.Minimize(cvx.norm(-c + fluor - b - gd_vec *
-                                          c1, 2) + lam * cvx.norm(G * c, 1))
+        try:
+            lam = .01 / np.sqrt(T)
+            objective = cvx.Minimize(
+                cvx.sum_squares((-c[::2] + fluor[::2] - b - gd_vec[::2] * c1) / sn[0]) +
+                cvx.sum_squares((-c[1::2] + fluor[1::2] - b - gd_vec[1::2] * c1) / sn[1]) +
+                (lam * cvx.norm(G * c, 1))**2)
+        except:
+            lam = 20 / np.sqrt(T)
+            objective = cvx.Minimize(cvx.norm(-c + fluor - b - gd_vec * c1, 2) +
+                                     lam * cvx.norm(G * c, 1))
+
         prob = cvx.Problem(objective, constraints)
         try:  # in case scs was not installed properly
             try:
