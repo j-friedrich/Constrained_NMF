@@ -4,7 +4,7 @@ services:
   - docker
 
 before_install:
-  - docker build -t simonsfoundation/caiman .
+  - docker build -t j-friedrich/caiman .
 
 before_script: # configure a headless display to test plot generation
 - "export DISPLAY=:99.0"
@@ -12,18 +12,12 @@ before_script: # configure a headless display to test plot generation
 - sleep 3 # give xvfb some time to start
 
 script:
-  - docker run -i -d -p 127.0.0.1:80:4567 simonsfoundation/caiman /bin/sh -c "nosetests"
+  - docker run -i -d -p 127.0.0.1:80:4567 j-friedrich/caiman /bin/sh -c "nosetests"
   - docker ps -a
-  - docker run simonsfoundation/caiman /bin/sh -c "nosetests"
+  - docker run j-friedrich/caiman /bin/sh -c "nosetests"
 
 
 # whitelist
 branches:
   only:
-    # - testing
-    # - CNMF2
-    # - anaconda
-    # - docker
     - master
-    # - agiovann-master
-    # - dev
