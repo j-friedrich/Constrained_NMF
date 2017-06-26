@@ -15,11 +15,13 @@ import tempfile
 import os
 #from joblib import Parallel,delayed
 import shutil
-from multiprocessing.dummy import Pool as ThreadPool 
+from multiprocessing.dummy import Pool as ThreadPool
 from utilities import load_memmap
 from ipyparallel import Client
 
 #%%
+
+
 def interpolate_missing_data(Y):
     """
     Interpolate any missing data using nearest neighbor interpolation.
@@ -34,15 +36,16 @@ def interpolate_missing_data(Y):
     coor list
         list of interpolated coordinates
     """
-    coor=[];
+    coor = []
     if np.any(np.isnan(Y)):
-        raise Exception('The algorithm has not been tested with missing values (NaNs). Remove NaNs and rerun the algorithm.')
+        raise Exception(
+            'The algorithm has not been tested with missing values (NaNs). Remove NaNs and rerun the algorithm.')
         # need to
-        for idx,row in enumerate(Y):
-            nans=np.where(np.isnan(row))[0]
-            n_nans=np.where(~np.isnan(row))[0]
-            coor.append((idx,nans))
-            Y[idx,nans]=np.interp(nans, n_nans, row[n_nans])
+        for idx, row in enumerate(Y):
+            nans = np.where(np.isnan(row))[0]
+            n_nans = np.where(~np.isnan(row))[0]
+            coor.append((idx, nans))
+            Y[idx, nans] = np.interp(nans, n_nans, row[n_nans])
 
 
 #    mis_data = np.isnan(Y)
@@ -69,7 +72,9 @@ def interpolate_missing_data(Y):
     return Y, coor
 
 #%%
-def find_unsaturated_pixels(Y, saturationValue = None, saturationThreshold = 0.9, saturationTime = 0.005):
+
+
+def find_unsaturated_pixels(Y, saturationValue=None, saturationThreshold=0.9, saturationTime=0.005):
     """Identifies the saturated pixels that are saturated and returns the ones that are not.
     A pixel is defined as saturated if its observed fluorescence is above
     saturationThreshold*saturationValue at least saturationTime fraction of the time.
@@ -91,16 +96,18 @@ def find_unsaturated_pixels(Y, saturationValue = None, saturationThreshold = 0.9
 
     """
     if saturationValue == None:
-        saturationValue = np.power(2,np.ceil(np.log2(np.max(Y))))-1
+        saturationValue = np.power(2, np.ceil(np.log2(np.max(Y)))) - 1
 
-    Ysat = (Y >= saturationThreshold*saturationValue)
-    pix = np.mean(Ysat,Y.ndim-1).flatten('F') > saturationTime
+    Ysat = (Y >= saturationThreshold * saturationValue)
+    pix = np.mean(Ysat, Y.ndim - 1).flatten('F') > saturationTime
     normalPixels = np.where(pix)
 
     return normalPixels
 
 #%%
-def get_noise_fft(Y, noise_range = [0.25,0.5], noise_method = 'logmexp', max_num_samples_fft=3072):
+
+
+def get_noise_fft(Y, noise_range=[0.25, 0.5], noise_method='logmexp', max_num_samples_fft=3072):
     """Estimate the noise level for each pixel by averaging the power spectral density.
     Inputs:
     Y: np.ndarray
@@ -120,41 +127,39 @@ def get_noise_fft(Y, noise_range = [0.25,0.5], noise_method = 'logmexp', max_num
         Noise level for each pixel
     """
     T = np.shape(Y)[-1]
-    Y=np.array(Y,dtype=np.float64)
+    Y = np.array(Y, dtype=np.float64)
 
     if T > max_num_samples_fft:
-        Y=np.concatenate((Y[...,1:np.int(max_num_samples_fft/3)+1],        
-                         Y[...,np.int(T/2-max_num_samples_fft/3/2):np.int(T/2+max_num_samples_fft/3/2)],
-                         Y[...,-np.int(max_num_samples_fft/3):]),axis=-1)        
+        Y = np.concatenate((Y[..., 1:np.int(max_num_samples_fft / 3) + 1],
+                            Y[..., np.int(T / 2 - max_num_samples_fft / 3 / 2)
+                                          :np.int(T / 2 + max_num_samples_fft / 3 / 2)],
+                            Y[..., -np.int(max_num_samples_fft / 3):]), axis=-1)
 
         T = np.shape(Y)[-1]
 
     dims = len(np.shape(Y))
-    ff = np.arange(0,0.5+1./T,1./T)
+    ff = np.arange(0, 0.5 + 1. / T, 1. / T)
     ind1 = ff > noise_range[0]
     ind2 = ff <= noise_range[1]
-    ind = np.logical_and(ind1,ind2)    
+    ind = np.logical_and(ind1, ind2)
 
     if dims > 1:
 
-        xdft = np.fft.rfft(Y,axis=-1)
-        psdx = (1./T)*abs(xdft)**2
-        psdx[...,1:] *= 2
-        sn = mean_psd(psdx[...,ind], method = noise_method)
+        xdft = np.fft.rfft(Y, axis=-1)
+        psdx = (1. / T) * abs(xdft)**2
+        psdx[..., 1:] *= 2
+        sn = mean_psd(psdx[..., ind], method=noise_method)
 
     else:
         xdft = np.fliplr(rfft(Y))
-        psdx = (1./T)*(xdft**2)
-        psdx[1:] *=2
-        sn = mean_psd(psdx[ind], method = noise_method)
-
+        psdx = (1. / T) * (xdft**2)
+        psdx[1:] *= 2
+        sn = mean_psd(psdx[ind], method=noise_method)
 
     return sn, psdx
 
 
-
-
-def get_noise_fft_parallel(Y,n_pixels_per_process=100, dview=None, **kwargs):
+def get_noise_fft_parallel(Y, n_pixels_per_process=100, dview=None, **kwargs):
     """parallel version of get_noise_fft.
 
     Params:
@@ -183,11 +188,10 @@ def get_noise_fft_parallel(Y,n_pixels_per_process=100, dview=None, **kwargs):
 
     folder = tempfile.mkdtemp()
 
-
     # Pre-allocate a writeable shared memory map as a container for the
     # results of the parallel computation
 
-    pixel_groups=range(0,Y.shape[0]-n_pixels_per_process+1,n_pixels_per_process)
+    pixel_groups = range(0, Y.shape[0] - n_pixels_per_process + 1, n_pixels_per_process)
 
 #    if backend=="threading": # case joblib
 #        sn_name = os.path.join(folder, 'sn_s')
@@ -211,74 +215,68 @@ def get_noise_fft_parallel(Y,n_pixels_per_process=100, dview=None, **kwargs):
 #            psx_s[idx,:]=psx_
 
     if dview is not None:
-        
+
         if type(Y) is np.core.memmap:  # if input file is already memory mapped then find the filename
             Y_name = Y.filename
         else:
             raise Exception('ipyparallel backend only works with memory mapped files')
-            
-        
+
         ne = len(dview)
-        print 'Running on %d engines.'%(ne)
+        print 'Running on %d engines.' % (ne)
 
-        argsin=[(Y_name, i, n_pixels_per_process, kwargs) for i in pixel_groups]
+        argsin = [(Y_name, i, n_pixels_per_process, kwargs) for i in pixel_groups]
 
-#        if backend=='SLURM':     
+#        if backend=='SLURM':
 #            results = dview.map(fft_psd_multithreading, argsin)
-#        else:            
+#        else:
 #            results = dview.map_sync(fft_psd_multithreading, argsin)
-        
-        
-        if dview.client.profile == 'default':     
-            results = dview.map_sync(fft_psd_multithreading, argsin)            
+
+        if dview.client.profile == 'default':
+            results = dview.map_sync(fft_psd_multithreading, argsin)
         else:
-            print 'PROFILE:'+ dview.client.profile
-            results = dview.map(fft_psd_multithreading, argsin)         
-        
-        _,_,psx_= results[0]
-        psx_s=np.zeros((Y.shape[0],psx_.shape[-1]))
-        sn_s=np.zeros(Y.shape[0])
+            print 'PROFILE:' + dview.client.profile
+            results = dview.map(fft_psd_multithreading, argsin)
 
-        for idx,sn, psx_ in results:
-            sn_s[idx]=sn
-            psx_s[idx,:]=psx_
-        
+        _, _, psx_ = results[0]
+        psx_s = np.zeros((Y.shape[0], psx_.shape[-1]))
+        sn_s = np.zeros(Y.shape[0])
 
-                
+        for idx, sn, psx_ in results:
+            sn_s[idx] = sn
+            psx_s[idx, :] = psx_
+
     else:
-#        pool = ThreadPool(n_processes)
+        #        pool = ThreadPool(n_processes)
         print 'Single Thread'
-        argsin=[(Y, i, n_pixels_per_process, kwargs) for i in pixel_groups]
+        argsin = [(Y, i, n_pixels_per_process, kwargs) for i in pixel_groups]
         results = map(fft_psd_multithreading, argsin)
-        _,_,psx_= results[0]
-        sn_s=np.zeros(Y.shape[0])
-        psx_s=np.zeros((Y.shape[0],psx_.shape[-1]))        
-        for idx,sn,psx_ in results:        
-            sn_s[idx]=sn
-            psx_s[idx,:]=psx_
-                 
-                        
-        
-    # if n_pixels_per_process is not a multiple of Y.shape[0] run on remaining pixels   
-    pixels_remaining= Y.shape[0] %  n_pixels_per_process  
-    
-    if pixels_remaining>0:                  
+        _, _, psx_ = results[0]
+        sn_s = np.zeros(Y.shape[0])
+        psx_s = np.zeros((Y.shape[0], psx_.shape[-1]))
+        for idx, sn, psx_ in results:
+            sn_s[idx] = sn
+            psx_s[idx, :] = psx_
+
+    # if n_pixels_per_process is not a multiple of Y.shape[0] run on remaining pixels
+    pixels_remaining = Y.shape[0] % n_pixels_per_process
+
+    if pixels_remaining > 0:
 
         print "Running fft for remaining pixels:" + str(pixels_remaining)
         if type(Y) is np.core.memmap:  # if input file is already memory mapped then find the filename
             Y_name = Y.filename
         elif type(Y) is str:
-            Y_name=Y
+            Y_name = Y
         else:
             raise Exception('ipyparallel backend only works with memory mapped files')
 
-        idx,sn, psx_=fft_psd_multithreading((Y_name,Y.shape[0]-pixels_remaining, pixels_remaining, kwargs))
-        sn_s[idx]=sn
-        psx_s[idx,:]=psx_
+        idx, sn, psx_ = fft_psd_multithreading((Y_name if dview is not None else Y,
+                                                Y.shape[0] - pixels_remaining, pixels_remaining, kwargs))
+        sn_s[idx] = sn
+        psx_s[idx, :] = psx_
 
-    sn_s=np.array(sn_s)
-    psx_s=np.array(psx_s)
-
+    sn_s = np.array(sn_s)
+    psx_s = np.array(psx_s)
 
     try:
 
@@ -289,10 +287,11 @@ def get_noise_fft_parallel(Y,n_pixels_per_process=100, dview=None, **kwargs):
         print("Failed to delete: " + folder)
         raise
 
-    return sn_s,psx_s
+    return sn_s, psx_s
 #%%
 
-def fft_psd_parallel(Y,sn_s,i,num_pixels,**kwargs):
+
+def fft_psd_parallel(Y, sn_s, i, num_pixels, **kwargs):
     """helper function to parallelize get_noise_fft
 
     Parameters:
@@ -313,12 +312,13 @@ def fft_psd_parallel(Y,sn_s,i,num_pixels,**kwargs):
 
 
     """
-    idxs=range(i,i+num_pixels)
+    idxs = range(i, i + num_pixels)
     #sn_s[idxs]=get_noise_fft(Y[idxs], **kwargs)
-    res=get_noise_fft(Y[idxs], **kwargs)
-    sn_s[idxs]=res
+    res = get_noise_fft(Y[idxs], **kwargs)
+    sn_s[idxs] = res
     #print("[Worker %d] sn for row %d is %f" % (os.getpid(), i, sn_s[0]))
 #%%
+
 
 def fft_psd_multithreading(args):
     """helper function to parallelize get_noise_fft
@@ -341,19 +341,20 @@ def fft_psd_multithreading(args):
         arguments to be passed to get_noise_fft
 
     """
-    (Y,i,num_pixels,kwargs)=args
-    Yold=Y
+    (Y, i, num_pixels, kwargs) = args
+    Yold = Y
     if type(Y) is str:
-        Y,_,_=load_memmap(Y)
-    
-    idxs=range(i,i+num_pixels)
-    res,psx=get_noise_fft(Y[idxs], **kwargs)
+        Y, _, _ = load_memmap(Y)
+
+    idxs = range(i, i + num_pixels)
+    res, psx = get_noise_fft(Y[idxs], **kwargs)
 
     #print("[Worker %d] sn for row %d is %f" % (os.getpid(), i, sn_s[0]))
-    return (idxs,res,psx)
+    return (idxs, res, psx)
 #%%
 
-def mean_psd(y, method = 'logmexp'):
+
+def mean_psd(y, method='logmexp'):
     """
     Averaging the PSD
     Inputs:
@@ -368,12 +369,12 @@ def mean_psd(y, method = 'logmexp'):
     """
 
     if method == 'mean':
-        mp = np.sqrt(np.mean(y/2,axis=-1))
+        mp = np.sqrt(np.mean(y / 2, axis=-1))
     elif method == 'median':
-        mp = np.sqrt(np.median(y/2,axis=-1))
+        mp = np.sqrt(np.median(y / 2, axis=-1))
     else:
-        mp = np.log((y+1e-10)/2)
-        mp = np.mean(mp,axis=-1)
+        mp = np.log((y + 1e-10) / 2)
+        mp = np.mean(mp, axis=-1)
         mp = np.exp(mp)
         mp = np.sqrt(mp)
 #        mp = np.sqrt(np.exp(np.mean(np.log(y/2),axis=-1)))
@@ -383,7 +384,7 @@ def mean_psd(y, method = 'logmexp'):
 
 #%%
 
-def estimate_time_constant(Y, sn, p = None, lags = 5, include_noise = False, pixels = None):
+def estimate_time_constant(Y, sn, p=None, lags=5, include_noise=False, pixels=None):
     """
     Estimating global time constants for the dataset Y through the autocovariance function (optional).
     The function is no longer used in the standard setting of the algorithm since every trace has its own
@@ -408,37 +409,40 @@ def estimate_time_constant(Y, sn, p = None, lags = 5, include_noise = False, pix
         raise Exception("You need to define p")
 
     if pixels is None:
-        pixels = np.arange(np.size(Y)/np.shape(Y)[-1])
+        pixels = np.arange(np.size(Y) / np.shape(Y)[-1])
 
     from scipy.linalg import toeplitz
 
     npx = len(pixels)
     g = 0
     lags += p
-    XC = np.zeros((npx,2*lags+1))
+    XC = np.zeros((npx, 2 * lags + 1))
     for j in range(npx):
-        XC[j,:] = np.squeeze(axcov(np.squeeze(Y[pixels[j],:]),lags))
+        XC[j, :] = np.squeeze(axcov(np.squeeze(Y[pixels[j], :]), lags))
 
-    gv = np.zeros(npx*lags)
+    gv = np.zeros(npx * lags)
     if not include_noise:
-        XC = XC[:,np.arange(lags-1,-1,-1)]
+        XC = XC[:, np.arange(lags - 1, -1, -1)]
         lags -= p
 
-    A = np.zeros((npx*lags,p))
+    A = np.zeros((npx * lags, p))
     for i in range(npx):
         if not include_noise:
-            A[i*lags+np.arange(lags),:] = toeplitz(np.squeeze(XC[i,np.arange(p-1,p+lags-1)]),np.squeeze(XC[i,np.arange(p-1,-1,-1)]))
+            A[i * lags + np.arange(lags), :] = toeplitz(np.squeeze(XC[i, np.arange(p - 1,
+                                                                                   p + lags - 1)]), np.squeeze(XC[i, np.arange(p - 1, -1, -1)]))
         else:
-            A[i*lags+np.arange(lags),:] = toeplitz(np.squeeze(XC[i,lags+np.arange(lags)]),np.squeeze(XC[i,lags+np.arange(p)])) - (sn[i]**2)*np.eye(lags,p)
-            gv[i*lags+np.arange(lags)] = np.squeeze(XC[i,lags+1:])
+            A[i * lags + np.arange(lags), :] = toeplitz(np.squeeze(XC[i, lags + np.arange(lags)]),
+                                                        np.squeeze(XC[i, lags + np.arange(p)])) - (sn[i]**2) * np.eye(lags, p)
+            gv[i * lags + np.arange(lags)] = np.squeeze(XC[i, lags + 1:])
 
     if not include_noise:
-        gv = XC[:,p:].T
-        gv = np.squeeze(np.reshape(gv,(np.size(gv),1),order='F'))
+        gv = XC[:, p:].T
+        gv = np.squeeze(np.reshape(gv, (np.size(gv), 1), order='F'))
 
-    g = np.dot(np.linalg.pinv(A),gv)
+    g = np.dot(np.linalg.pinv(A), gv)
 
     return g
+
 
 def axcov(data, maxlag=5):
     """
@@ -459,11 +463,11 @@ def axcov(data, maxlag=5):
     T = len(data)
     bins = np.size(data)
     xcov = np.fft.fft(data, np.power(2, nextpow2(2 * bins - 1)))
-    xcov = np.fft.ifft(np.square(np.abs(xcov)))    
+    xcov = np.fft.ifft(np.square(np.abs(xcov)))
     xcov = np.concatenate([xcov[np.arange(xcov.size - maxlag, xcov.size)],
                            xcov[np.arange(0, maxlag + 1)]])
     #xcov = xcov/np.concatenate([np.arange(T-maxlag,T+1),np.arange(T-1,T-maxlag-1,-1)])
-    return np.real(xcov/T)
+    return np.real(xcov / T)
 
 
 #%%
@@ -484,22 +488,25 @@ def nextpow2(value):
         exponent += 1
     return exponent
 
-def preprocess_data(Y, sn = None ,  dview=None, n_pixels_per_process=100,  noise_range = [0.25,0.5], noise_method = 'logmexp', compute_g=False,  p = 2, g = None,  lags = 5, include_noise = False, pixels = None,max_num_samples_fft=3000):
+
+def preprocess_data(Y, sn=None,  dview=None, n_pixels_per_process=100,  noise_range=[0.25, 0.5], noise_method='logmexp', compute_g=False,  p=2, g=None,  lags=5, include_noise=False, pixels=None, max_num_samples_fft=3000):
     """
     Performs the pre-processing operations described above.
     """
 
-    Y,coor=interpolate_missing_data(Y)
+    Y, coor = interpolate_missing_data(Y)
 
     if sn is None:
-        sn,psx=get_noise_fft_parallel(Y,n_pixels_per_process=n_pixels_per_process, dview = dview, noise_range = noise_range, noise_method = noise_method,max_num_samples_fft=max_num_samples_fft)
+        sn, psx = get_noise_fft_parallel(Y, n_pixels_per_process=n_pixels_per_process, dview=dview,
+                                         noise_range=noise_range, noise_method=noise_method, max_num_samples_fft=max_num_samples_fft)
         #sn = get_noise_fft(Y, noise_range = noise_range, noise_method = noise_method)
     else:
-        psx=None
+        psx = None
 
     if compute_g:
-        g = estimate_time_constant(Y, sn, p = p, lags = lags, include_noise = include_noise, pixels = pixels)
+        g = estimate_time_constant(Y, sn, p=p, lags=lags,
+                                   include_noise=include_noise, pixels=pixels)
     else:
-        g=None
+        g = None
 
     return Y, sn, g, psx

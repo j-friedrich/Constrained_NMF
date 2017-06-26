@@ -880,7 +880,7 @@ def calcAvec(new, dQ, W, lambda_, active_set, M, positive):
 
     if positive:
         if new >= 0:
-            in_ = np.sum(active_set[:new])
+            in_ = int(np.sum(active_set[:new]))
             if avec[in_] < 0:
                 # new;
                 #%error('new component of a is negative')
